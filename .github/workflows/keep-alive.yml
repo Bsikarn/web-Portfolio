@@ -14,14 +14,20 @@ jobs:
         run: |
           BASE_URL=$(echo "${{ secrets.SUPABASE_URL }}" | sed 's:/*$::')
 
-          STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X GET "$BASE_URL/auth/v1/health" \
+          # Query PostgreSQL via PostgREST to register active database queries and prevent pausing
+          HTTP_RESPONSE=$(curl -s -S -w "\n%{http_code}" -X GET "$BASE_URL/rest/v1/projects?select=id&limit=1" \
             -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}")
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" || echo -e "\nCURL_ERROR")
+
+          STATUS_CODE=$(echo "$HTTP_RESPONSE" | tail -n1)
 
           echo "Supabase Response Status: $STATUS_CODE"
 
-          if [ "$STATUS_CODE" -ge 200 ] && [ "$STATUS_CODE" -lt 400 ]; then
-            echo "Successfully pinged Supabase! Keep-alive active."
+          if [ "$STATUS_CODE" = "CURL_ERROR" ]; then
+            echo "::error::Network or DNS error (curl exit code). If the hostname cannot be resolved, check if the Supabase project is currently PAUSED at https://supabase.com/dashboard"
+            exit 1
+          elif [ "$STATUS_CODE" -ge 200 ] && [ "$STATUS_CODE" -lt 400 ]; then
+            echo "Successfully pinged Supabase REST API! Keep-alive active."
             exit 0
           else
             echo "Ping failed with status code $STATUS_CODE"
